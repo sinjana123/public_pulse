@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Public Pulse: Track & Vote</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <a href="menu.html" class="back-link">Back to Menu</a>
+    </header>
+
+    <section id="track">
+        <h2>Track Issues & Vote</h2>
+        <p>Purpose: Helps authorities identify urgent issues quickly, encourages community participation, and prevents overlooking minor but popular issues. The complaint with the most votes is treated as high priority.</p>
+        <div class="checkbox-section">
+            <h3>Reported Issues List</h3>
+            <div id="issues-list"></div>
+        </div>
+        <div class="checkbox-section">
+            <h3>Select & Vote</h3>
+            <form id="vote-form">
+                <select id="issue-select" required>
+                    <option value="">Select an Issue</option>
+                </select>
+                <button type="submit">Vote</button>
+            </form>
+            <p id="vote-message"></p>
+        </div>
+        <div class="checkbox-section">
+            <h3>Most Voted Issue</h3>
+            <div id="most-voted"></div>
+        </div>
+    </section>
+
+    <footer>
+        <p>&copy; 2025 Public Pulse. Inspired by FixMyStreet, Spothole, Swachhata. Thank You!</p>
+    </footer>
+
+    <script src="track.js"></script>
+</body>
+</html>

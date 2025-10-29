@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Public Pulse: Report an Issue</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <a href="menu.html" class="back-link">Back to Menu</a>
+    </header>
+
+    <section id="report">
+        <h2>Report a Civic Issue</h2>
+        <p>Context: In cities, towns, and rural areas, public problems like potholes, garbage dumps, water leakage, broken street lights, or illegal activities often go unreported or are reported through inefficient channels.</p>
+        <form id="report-form">
+            <input type="text" id="issue-title" placeholder="Issue Title (e.g., Pothole on Main Road)" required>
+            <textarea id="description" placeholder="Describe the problem" required></textarea>
+            <input type="file" id="photo-upload" accept="image/*" placeholder="Upload Photo Proof">
+            <button type="button" id="get-location">Get GPS Location</button>
+            <input type="text" id="location" placeholder="Location (auto-filled)" readonly>
+            <button type="submit">Submit Report</button>
+        </form>
+        <p id="report-message"></p>
+    </section>
+
+    <footer>
+        <p>&copy; 2025 Public Pulse. Inspired by FixMyStreet, Spothole, Swachhata. Thank You!</p>
+    </footer>
+
+    <script src="report.js"></script>
+</body>
+</html>
