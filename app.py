@@ -15,7 +15,11 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app = Flask(__name__, static_folder=STATIC_DIR)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  
+@app.route('/')
+def home():
+    return send_from_directory(app.static_folder, 'index.html')
+# 16 MB
 # IMPORTANT: In production set a secure random secret key via environment var
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-me")
 
