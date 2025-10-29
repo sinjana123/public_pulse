@@ -1,4 +1,3 @@
-
 from flask import Flask, request, jsonify, send_from_directory, g, session
 import os
 import sqlite3
@@ -266,6 +265,7 @@ def admin_panel():
 if __name__ == "__main__":
     with app.app_context():
         init_db()
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
 
 
