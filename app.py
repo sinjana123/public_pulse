@@ -8,7 +8,7 @@ import secrets
 
 # ---------------- Base Paths ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(BASE_DIR, "static")  # static folder for frontend
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 DB_PATH = os.path.join(BASE_DIR, "publicpulse.db")
 
@@ -67,7 +67,7 @@ def init_db():
     )""")
     db.commit()
 
-# ---------------- Admin Authentication Helper ----------------
+# ---------------- Auth Helper ----------------
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -76,13 +76,14 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated
 
-# ---------------- Public APIs ----------------
+# ---------------- API Routes ----------------
 @app.route('/api/report', methods=['POST'])
 def submit_report():
     title = request.form.get('title')
     description = request.form.get('description')
     location = request.form.get('location')
     file = request.files.get('photo')
+
     if not title or not description:
         return jsonify({"error": "title and description required"}), 400
 
@@ -105,6 +106,7 @@ def submit_report():
     except Exception as e:
         db.rollback()
         return jsonify({"error": str(e)}), 500
+
     return jsonify({"status": "ok", "issue_id": issue_id})
 
 @app.route('/api/contact', methods=['POST'])
@@ -113,8 +115,10 @@ def submit_contact():
     name = data.get('name')
     email = data.get('email')
     message = data.get('message')
+
     if not name or not email or not message:
         return jsonify({"error": "name,email,message required"}), 400
+
     db = get_db()
     cur = db.cursor()
     cur.execute("INSERT INTO contacts (name,email,message) VALUES (?,?,?)", (name,email,message))
@@ -127,6 +131,7 @@ def vote():
     title = data.get('title')
     if not title:
         return jsonify({"error": "title required"}), 400
+
     db = get_db()
     cur = db.cursor()
     cur.execute("SELECT id FROM issues WHERE title = ?", (title,))
@@ -158,69 +163,38 @@ def list_issues():
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-# ---------------- Admin Auth & Dashboard APIs ----------------
-@app.route('/api/admin/create', methods=['POST'])
-def create_admin():
-    data = request.get_json() or request.form
-    email = data.get('email')
-    password = data.get('password')
-    if not email or not password:
-        return jsonify({"error": "email and password required"}), 400
-    pw_hash = generate_password_hash(password)
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("INSERT INTO admins (email,password_hash) VALUES (?,?)", (email,pw_hash))
-        db.commit()
-        return jsonify({"status":"ok"})
-    except Exception as e:
-        db.rollback()
-        return jsonify({"error":str(e)}), 500
-
+# ---------------- Admin Login & Management ----------------
 @app.route('/api/admin/login', methods=['POST'])
 def admin_login():
     data = request.get_json() or request.form
     email = data.get('email')
     password = data.get('password')
+
     if not email or not password:
         return jsonify({"error": "email and password required"}), 400
+
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT id,password_hash FROM admins WHERE email = ?", (email,))
-    row = cur.fetchone()
-    if not row or not check_password_hash(row['password_hash'], password):
-        return jsonify({"error": "invalid credentials"}), 401
-    session['admin_logged_in'] = True
-    session['admin_id'] = row['id']
-    session['admin_email'] = email
-    return jsonify({"status": "ok"})
+    cur.execute("SELECT id, password_hash FROM admins WHERE email = ?", (email,))
+    admin = cur.fetchone()
 
-@app.route('/api/admin/logout', methods=['POST'])
-def admin_logout():
-    session.pop('admin_logged_in', None)
-    session.pop('admin_id', None)
-    session.pop('admin_email', None)
-    return jsonify({"status": "ok"})
+    if admin and check_password_hash(admin['password_hash'], password):
+        session['admin_logged_in'] = True
+        session['admin_id'] = admin['id']
+        session['admin_email'] = email
+        return jsonify({"status": "ok"})
+    return jsonify({"error": "Invalid credentials"}), 401
 
-@app.route('/api/admin/session', methods=['GET'])
-def admin_session():
-    if session.get('admin_logged_in'):
-        return jsonify({"logged_in": True, "email": session.get('admin_email')})
-    return jsonify({"logged_in": False})
 
 @app.route('/api/admin/reports', methods=['GET'])
 @admin_required
 def admin_reports():
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT id,title,description,location,votes,status,photo_path,created_at FROM issues ORDER BY created_at DESC")
+    cur.execute("SELECT * FROM issues ORDER BY created_at DESC")
     rows = [dict(r) for r in cur.fetchall()]
-    for r in rows:
-        if r.get('photo_path'):
-            r['photo_url'] = '/uploads/' + os.path.basename(r['photo_path'])
-        else:
-            r['photo_url'] = None
     return jsonify(rows)
+
 
 @app.route('/api/admin/update_status', methods=['POST'])
 @admin_required
@@ -228,26 +202,27 @@ def admin_update_status():
     data = request.get_json() or request.form
     issue_id = data.get('issue_id')
     status = data.get('status')
+
     if not issue_id or not status:
         return jsonify({"error": "issue_id and status required"}), 400
+
     db = get_db()
     cur = db.cursor()
     cur.execute("UPDATE issues SET status = ? WHERE id = ?", (status, issue_id))
     db.commit()
-    cur.execute("INSERT INTO reports_log (issue_id, action) VALUES (?,?)", (issue_id, 'status:' + status))
-    db.commit()
     return jsonify({"status": "ok"})
+
+
+@app.route('/api/admin/logout', methods=['POST'])
+def admin_logout():
+    session.clear()
+    return jsonify({"status": "ok"})
+
 
 # ---------------- Frontend Routing ----------------
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_file(path):
-    if path.startswith('admin'):
-        if session.get('admin_logged_in'):
-            return send_from_directory(STATIC_DIR, 'admin.html')
-        else:
-            return send_from_directory(STATIC_DIR, 'login.html')
-
     target = path if path else 'index.html'
     safe_path = os.path.join(STATIC_DIR, target)
     if os.path.exists(safe_path):

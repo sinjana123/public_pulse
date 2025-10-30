@@ -1,52 +1,98 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Admin Dashboard - Public Pulse</title>
-  <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <title>Admin Dashboard - Public Pulse</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background: #f8f9fa;
+        }
+        h1 {
+            color: #333;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background: #eee;
+        }
+        button {
+            padding: 6px 10px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+        }
+        .pending { background-color: orange; }
+        .resolved { background-color: green; color: white; }
+    </style>
 </head>
 <body>
-  <h1>Admin Dashboard</h1>
-  <button id="logoutBtn">Logout</button>
+    <h1>Public Pulse Admin Dashboard</h1>
+    <p><button onclick="logout()">Logout</button></p>
 
-  <h3>Reported Issues</h3>
-  <div id="issues"></div>
+    <h2>Reported Issues</h2>
+    <table id="issuesTable">
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Description</th>
+                <th>Location</th>
+                <th>Votes</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
 
-  <script>
-    async function fetchIssues() {
-      const res = await fetch('/api/admin/reports');
-      const data = await res.json();
-      if (data.error) {
-        alert('You must log in first');
-        window.location.href = '/login.html';
-        return;
-      }
-      const container = document.getElementById('issues');
-      container.innerHTML = data.map(issue => `
-        <div class="issue">
-          <h4>${issue.title}</h4>
-          <p>${issue.description}</p>
-          <p>Status: <b>${issue.status}</b></p>
-          <button onclick="updateStatus(${issue.id}, 'Resolved')">Mark Resolved</button>
-        </div>
-      `).join('');
-    }
+    <script>
+        async function loadIssues() {
+            const res = await fetch('/api/admin/reports');
+            const issues = await res.json();
+            const tbody = document.querySelector('#issuesTable tbody');
+            tbody.innerHTML = '';
+            issues.forEach(issue => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${issue.title}</td>
+                    <td>${issue.description || ''}</td>
+                    <td>${issue.location || ''}</td>
+                    <td>${issue.votes}</td>
+                    <td>${issue.status}</td>
+                    <td>
+                        <button class="pending" onclick="updateStatus(${issue.id}, 'Pending')">Pending</button>
+                        <button class="resolved" onclick="updateStatus(${issue.id}, 'Resolved')">Resolved</button>
+                    </td>`;
+                tbody.appendChild(row);
+            });
+        }
 
-    async function updateStatus(id, status) {
-      await fetch('/api/admin/update_status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ issue_id: id, status })
-      });
-      fetchIssues();
-    }
+        async function updateStatus(id, status) {
+            await fetch('/api/admin/update_status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ issue_id: id, status })
+            });
+            loadIssues();
+        }
 
-    document.getElementById('logoutBtn').addEventListener('click', async () => {
-      await fetch('/api/admin/logout', { method: 'POST' });
-      window.location.href = '/login.html';
-    });
+        async function logout() {
+            await fetch('/api/admin/logout', { method: 'POST' });
+            alert("Logged out successfully!");
+            window.location.href = '/login.html';
+        }
 
-    fetchIssues();
-  </script>
+        loadIssues();
+    </script>
 </body>
 </html>
