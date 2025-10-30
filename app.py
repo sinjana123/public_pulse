@@ -6,8 +6,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 import secrets
 
+# ---------------- Configuration ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(BASE_DIR, "..", "public pulse website")
+STATIC_DIR = os.path.join(BASE_DIR, "..", "public_pulse_website")  # <-- make sure folder name matches
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 DB_PATH = os.path.join(BASE_DIR, "publicpulse.db")
 
@@ -15,14 +16,10 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app = Flask(__name__, static_folder=STATIC_DIR)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  
-@app.route('/')
-def home():
-    return send_from_directory(app.static_folder, 'index.html')
-# 16 MB
-# IMPORTANT: In production set a secure random secret key via environment var
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB max file upload
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-me")
 
+# ---------------- Database Functions ----------------
 def get_db():
     db = getattr(g, "_database", None)
     if db is None:
@@ -70,14 +67,16 @@ def init_db():
     )""")
     db.commit()
 
+# ---------------- Authentication Helpers ----------------
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not session.get('admin_logged_in'):
-            return jsonify({"error":"unauthorized"}), 401
+            return jsonify({"error": "unauthorized"}), 401
         return f(*args, **kwargs)
     return decorated
 
+# ---------------- API Routes ----------------
 @app.route('/api/report', methods=['POST'])
 def submit_report():
     title = request.form.get('title')
@@ -93,19 +92,22 @@ def submit_report():
         filename = secrets.token_hex(8) + "_" + filename
         photo_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(photo_path)
+
     db = get_db()
     cur = db.cursor()
     try:
         cur.execute("""INSERT INTO issues (title, description, location, photo_path, status)
-                       VALUES (?,?,?,?,?)""", (title, description, location, photo_path, 'Pending'))
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (title, description, location, photo_path, 'Pending'))
         db.commit()
         issue_id = cur.lastrowid
-        cur.execute("INSERT INTO reports_log (issue_id, action) VALUES (?,?)", (issue_id, 'created'))
+        cur.execute("INSERT INTO reports_log (issue_id, action) VALUES (?, ?)", (issue_id, 'created'))
         db.commit()
     except Exception as e:
         db.rollback()
         return jsonify({"error": str(e)}), 500
-    return jsonify({"status":"ok","issue_id":issue_id})
+
+    return jsonify({"status": "ok", "issue_id": issue_id})
 
 @app.route('/api/contact', methods=['POST'])
 def submit_contact():
@@ -114,19 +116,19 @@ def submit_contact():
     email = data.get('email')
     message = data.get('message')
     if not name or not email or not message:
-        return jsonify({"error":"name,email,message required"}), 400
+        return jsonify({"error": "name, email, and message are required"}), 400
     db = get_db()
     cur = db.cursor()
-    cur.execute("INSERT INTO contacts (name,email,message) VALUES (?,?,?)", (name,email,message))
+    cur.execute("INSERT INTO contacts (name, email, message) VALUES (?, ?, ?)", (name, email, message))
     db.commit()
-    return jsonify({"status":"ok"})
+    return jsonify({"status": "ok"})
 
 @app.route('/api/vote', methods=['POST'])
 def vote():
     data = request.get_json() or request.form
     title = data.get('title')
     if not title:
-        return jsonify({"error":"title required"}), 400
+        return jsonify({"error": "title required"}), 400
     db = get_db()
     cur = db.cursor()
     cur.execute("SELECT id FROM issues WHERE title = ?", (title,))
@@ -134,49 +136,45 @@ def vote():
     if row:
         cur.execute("UPDATE issues SET votes = votes + 1 WHERE id = ?", (row['id'],))
         db.commit()
-        return jsonify({"status":"ok","action":"incremented"})
+        return jsonify({"status": "ok", "action": "incremented"})
     else:
-        cur.execute("INSERT INTO issues (title,description,location,votes,status) VALUES (?,?,?,?,?)", 
+        cur.execute("INSERT INTO issues (title, description, location, votes, status) VALUES (?, ?, ?, ?, ?)",
                     (title, '', '', 1, 'Pending'))
         db.commit()
-        return jsonify({"status":"ok","action":"created"})
+        return jsonify({"status": "ok", "action": "created"})
 
 @app.route('/api/issues', methods=['GET'])
 def list_issues():
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT id,title,description,location,votes,status,photo_path,created_at FROM issues ORDER BY votes DESC, created_at DESC")
+    cur.execute("SELECT id, title, description, location, votes, status, photo_path, created_at FROM issues ORDER BY votes DESC, created_at DESC")
     rows = [dict(r) for r in cur.fetchall()]
     for r in rows:
-        if r.get('photo_path'):
-            r['photo_url'] = '/uploads/' + os.path.basename(r['photo_path'])
-        else:
-            r['photo_url'] = None
+        r['photo_url'] = '/uploads/' + os.path.basename(r['photo_path']) if r.get('photo_path') else None
     return jsonify(rows)
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-# ---------------- Admin auth & dashboard APIs ----------------
-
+# ---------------- Admin APIs ----------------
 @app.route('/api/admin/create', methods=['POST'])
 def create_admin():
     data = request.get_json() or request.form
     email = data.get('email')
     password = data.get('password')
     if not email or not password:
-        return jsonify({"error":"email and password required"}), 400
+        return jsonify({"error": "email and password required"}), 400
     pw_hash = generate_password_hash(password)
     db = get_db()
     cur = db.cursor()
     try:
-        cur.execute("INSERT INTO admins (email,password_hash) VALUES (?,?)", (email,pw_hash))
+        cur.execute("INSERT INTO admins (email, password_hash) VALUES (?, ?)", (email, pw_hash))
         db.commit()
-        return jsonify({"status":"ok"})
+        return jsonify({"status": "ok"})
     except Exception as e:
         db.rollback()
-        return jsonify({"error":str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/admin/login', methods=['POST'])
 def admin_login():
@@ -184,43 +182,39 @@ def admin_login():
     email = data.get('email')
     password = data.get('password')
     if not email or not password:
-        return jsonify({"error":"email and password required"}), 400
+        return jsonify({"error": "email and password required"}), 400
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT id,password_hash FROM admins WHERE email = ?", (email,))
+    cur.execute("SELECT id, password_hash FROM admins WHERE email = ?", (email,))
     row = cur.fetchone()
     if not row or not check_password_hash(row['password_hash'], password):
-        return jsonify({"error":"invalid credentials"}), 401
+        return jsonify({"error": "invalid credentials"}), 401
     session['admin_logged_in'] = True
     session['admin_id'] = row['id']
     session['admin_email'] = email
-    return jsonify({"status":"ok"})
+    return jsonify({"status": "ok"})
 
 @app.route('/api/admin/logout', methods=['POST'])
 def admin_logout():
-    session.pop('admin_logged_in', None)
-    session.pop('admin_id', None)
-    session.pop('admin_email', None)
-    return jsonify({"status":"ok"})
+    session.clear()
+    return jsonify({"status": "ok"})
 
 @app.route('/api/admin/session', methods=['GET'])
 def admin_session():
-    if session.get('admin_logged_in'):
-        return jsonify({"logged_in":True,"email":session.get('admin_email')})
-    return jsonify({"logged_in":False})
+    return jsonify({
+        "logged_in": bool(session.get('admin_logged_in')),
+        "email": session.get('admin_email')
+    })
 
 @app.route('/api/admin/reports', methods=['GET'])
 @admin_required
 def admin_reports():
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT id,title,description,location,votes,status,photo_path,created_at FROM issues ORDER BY created_at DESC")
+    cur.execute("SELECT id, title, description, location, votes, status, photo_path, created_at FROM issues ORDER BY created_at DESC")
     rows = [dict(r) for r in cur.fetchall()]
     for r in rows:
-        if r.get('photo_path'):
-            r['photo_url'] = '/uploads/' + os.path.basename(r['photo_path'])
-        else:
-            r['photo_url'] = None
+        r['photo_url'] = '/uploads/' + os.path.basename(r['photo_path']) if r.get('photo_path') else None
     return jsonify(rows)
 
 @app.route('/api/admin/contacts', methods=['GET'])
@@ -228,9 +222,8 @@ def admin_reports():
 def admin_contacts():
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT id,name,email,message,created_at FROM contacts ORDER BY created_at DESC")
-    rows = [dict(r) for r in cur.fetchall()]
-    return jsonify(rows)
+    cur.execute("SELECT id, name, email, message, created_at FROM contacts ORDER BY created_at DESC")
+    return jsonify([dict(r) for r in cur.fetchall()])
 
 @app.route('/api/admin/update_status', methods=['POST'])
 @admin_required
@@ -239,37 +232,36 @@ def admin_update_status():
     issue_id = data.get('issue_id')
     status = data.get('status')
     if not issue_id or not status:
-        return jsonify({"error":"issue_id and status required"}), 400
+        return jsonify({"error": "issue_id and status required"}), 400
     db = get_db()
     cur = db.cursor()
     cur.execute("UPDATE issues SET status = ? WHERE id = ?", (status, issue_id))
     db.commit()
-    cur.execute("INSERT INTO reports_log (issue_id, action) VALUES (?,?)", (issue_id, 'status:' + status))
+    cur.execute("INSERT INTO reports_log (issue_id, action) VALUES (?, ?)", (issue_id, f'status:{status}'))
     db.commit()
-    return jsonify({"status":"ok"})
+    return jsonify({"status": "ok"})
 
-# Serve frontend static files (index, css, js)
-@app.route('/', defaults={'path': 'index.html'})
+# ---------------- Frontend Serving ----------------
+@app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_file(path):
-    safe_path = os.path.join(STATIC_DIR, path)
-    # Protect admin path: serve admin.html only if logged in otherwise serve login.html
     if path.startswith('admin'):
         if session.get('admin_logged_in'):
             return send_from_directory(STATIC_DIR, 'admin.html')
-        else:
-            return send_from_directory(STATIC_DIR, 'login.html')
+        return send_from_directory(STATIC_DIR, 'login.html')
+
+    target_file = path if path else 'index.html'
+    safe_path = os.path.join(STATIC_DIR, target_file)
     if os.path.exists(safe_path):
-        return send_from_directory(STATIC_DIR, path)
-    # fallback to index
+        return send_from_directory(STATIC_DIR, target_file)
     return send_from_directory(STATIC_DIR, 'index.html')
+
 @app.route("/admin")
 def admin_panel():
     return "<h1>Welcome to the Admin Dashboard</h1><p>Backend is working perfectly!</p>"
+
+# ---------------- App Runner ----------------
 if __name__ == "__main__":
     with app.app_context():
         init_db()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
-
-
