@@ -6,9 +6,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 import secrets
 
-# ---------------- Configuration ----------------
+# Base paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(BASE_DIR, "..", "public_pulse_website")  # <-- make sure folder name matches
+STATIC_DIR = os.path.join(BASE_DIR, "static")  # ✅ Fix this line
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 DB_PATH = os.path.join(BASE_DIR, "publicpulse.db")
 
@@ -16,10 +16,10 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app = Flask(__name__, static_folder=STATIC_DIR)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB max file upload
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-me")
 
-# ---------------- Database Functions ----------------
+# ---------------- Database ----------------
 def get_db():
     db = getattr(g, "_database", None)
     if db is None:
@@ -67,7 +67,7 @@ def init_db():
     )""")
     db.commit()
 
-# ---------------- Authentication Helpers ----------------
+# ---------------- Auth Helper ----------------
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -97,16 +97,14 @@ def submit_report():
     cur = db.cursor()
     try:
         cur.execute("""INSERT INTO issues (title, description, location, photo_path, status)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (title, description, location, photo_path, 'Pending'))
+                       VALUES (?,?,?,?,?)""", (title, description, location, photo_path, 'Pending'))
         db.commit()
         issue_id = cur.lastrowid
-        cur.execute("INSERT INTO reports_log (issue_id, action) VALUES (?, ?)", (issue_id, 'created'))
+        cur.execute("INSERT INTO reports_log (issue_id, action) VALUES (?,?)", (issue_id, 'created'))
         db.commit()
     except Exception as e:
         db.rollback()
         return jsonify({"error": str(e)}), 500
-
     return jsonify({"status": "ok", "issue_id": issue_id})
 
 @app.route('/api/contact', methods=['POST'])
@@ -116,10 +114,10 @@ def submit_contact():
     email = data.get('email')
     message = data.get('message')
     if not name or not email or not message:
-        return jsonify({"error": "name, email, and message are required"}), 400
+        return jsonify({"error": "name,email,message required"}), 400
     db = get_db()
     cur = db.cursor()
-    cur.execute("INSERT INTO contacts (name, email, message) VALUES (?, ?, ?)", (name, email, message))
+    cur.execute("INSERT INTO contacts (name,email,message) VALUES (?,?,?)", (name,email,message))
     db.commit()
     return jsonify({"status": "ok"})
 
@@ -138,7 +136,7 @@ def vote():
         db.commit()
         return jsonify({"status": "ok", "action": "incremented"})
     else:
-        cur.execute("INSERT INTO issues (title, description, location, votes, status) VALUES (?, ?, ?, ?, ?)",
+        cur.execute("INSERT INTO issues (title, description, location, votes, status) VALUES (?,?,?,?,?)",
                     (title, '', '', 1, 'Pending'))
         db.commit()
         return jsonify({"status": "ok", "action": "created"})
@@ -147,120 +145,35 @@ def vote():
 def list_issues():
     db = get_db()
     cur = db.cursor()
-    cur.execute("SELECT id, title, description, location, votes, status, photo_path, created_at FROM issues ORDER BY votes DESC, created_at DESC")
+    cur.execute("SELECT id,title,description,location,votes,status,photo_path,created_at FROM issues ORDER BY votes DESC, created_at DESC")
     rows = [dict(r) for r in cur.fetchall()]
     for r in rows:
-        r['photo_url'] = '/uploads/' + os.path.basename(r['photo_path']) if r.get('photo_path') else None
+        if r.get('photo_path'):
+            r['photo_url'] = '/uploads/' + os.path.basename(r['photo_path'])
+        else:
+            r['photo_url'] = None
     return jsonify(rows)
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-# ---------------- Admin APIs ----------------
-@app.route('/api/admin/create', methods=['POST'])
-def create_admin():
-    data = request.get_json() or request.form
-    email = data.get('email')
-    password = data.get('password')
-    if not email or not password:
-        return jsonify({"error": "email and password required"}), 400
-    pw_hash = generate_password_hash(password)
-    db = get_db()
-    cur = db.cursor()
-    try:
-        cur.execute("INSERT INTO admins (email, password_hash) VALUES (?, ?)", (email, pw_hash))
-        db.commit()
-        return jsonify({"status": "ok"})
-    except Exception as e:
-        db.rollback()
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/admin/login', methods=['POST'])
-def admin_login():
-    data = request.get_json() or request.form
-    email = data.get('email')
-    password = data.get('password')
-    if not email or not password:
-        return jsonify({"error": "email and password required"}), 400
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("SELECT id, password_hash FROM admins WHERE email = ?", (email,))
-    row = cur.fetchone()
-    if not row or not check_password_hash(row['password_hash'], password):
-        return jsonify({"error": "invalid credentials"}), 401
-    session['admin_logged_in'] = True
-    session['admin_id'] = row['id']
-    session['admin_email'] = email
-    return jsonify({"status": "ok"})
-
-@app.route('/api/admin/logout', methods=['POST'])
-def admin_logout():
-    session.clear()
-    return jsonify({"status": "ok"})
-
-@app.route('/api/admin/session', methods=['GET'])
-def admin_session():
-    return jsonify({
-        "logged_in": bool(session.get('admin_logged_in')),
-        "email": session.get('admin_email')
-    })
-
-@app.route('/api/admin/reports', methods=['GET'])
-@admin_required
-def admin_reports():
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("SELECT id, title, description, location, votes, status, photo_path, created_at FROM issues ORDER BY created_at DESC")
-    rows = [dict(r) for r in cur.fetchall()]
-    for r in rows:
-        r['photo_url'] = '/uploads/' + os.path.basename(r['photo_path']) if r.get('photo_path') else None
-    return jsonify(rows)
-
-@app.route('/api/admin/contacts', methods=['GET'])
-@admin_required
-def admin_contacts():
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("SELECT id, name, email, message, created_at FROM contacts ORDER BY created_at DESC")
-    return jsonify([dict(r) for r in cur.fetchall()])
-
-@app.route('/api/admin/update_status', methods=['POST'])
-@admin_required
-def admin_update_status():
-    data = request.get_json() or request.form
-    issue_id = data.get('issue_id')
-    status = data.get('status')
-    if not issue_id or not status:
-        return jsonify({"error": "issue_id and status required"}), 400
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("UPDATE issues SET status = ? WHERE id = ?", (status, issue_id))
-    db.commit()
-    cur.execute("INSERT INTO reports_log (issue_id, action) VALUES (?, ?)", (issue_id, f'status:{status}'))
-    db.commit()
-    return jsonify({"status": "ok"})
-
-# ---------------- Frontend Serving ----------------
-@app.route('/', defaults={'path': ''})
-@app.route('/<path:path>')
-def serve_file(path):
-    if path.startswith('admin'):
-        if session.get('admin_logged_in'):
-            return send_from_directory(STATIC_DIR, 'admin.html')
-        return send_from_directory(STATIC_DIR, 'login.html')
-
-    target_file = path if path else 'index.html'
-    safe_path = os.path.join(STATIC_DIR, target_file)
-    if os.path.exists(safe_path):
-        return send_from_directory(STATIC_DIR, target_file)
-    return send_from_directory(STATIC_DIR, 'index.html')
-
+# ---------------- Admin Routes ----------------
 @app.route("/admin")
 def admin_panel():
     return "<h1>Welcome to the Admin Dashboard</h1><p>Backend is working perfectly!</p>"
 
-# ---------------- App Runner ----------------
+# ---------------- Frontend Routing ----------------
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_file(path):
+    target = path if path else 'index.html'
+    safe_path = os.path.join(STATIC_DIR, target)
+    if os.path.exists(safe_path):
+        return send_from_directory(STATIC_DIR, target)
+    return send_from_directory(STATIC_DIR, 'index.html')
+
+# ---------------- Main ----------------
 if __name__ == "__main__":
     with app.app_context():
         init_db()
