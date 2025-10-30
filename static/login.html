@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Login - Public Pulse</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h2>Admin Login</h2>
+  <form id="loginForm">
+    <input type="email" id="email" placeholder="Email" required><br>
+    <input type="password" id="password" placeholder="Password" required><br>
+    <button type="submit">Login</button>
+  </form>
+
+  <p id="loginStatus"></p>
+
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+
+      const data = await res.json();
+      if (data.status === 'ok') {
+        window.location.href = '/admin.html';
+      } else {
+        document.getElementById('loginStatus').innerText = data.error || 'Login failed';
+      }
+    });
+  </script>
+</body>
+</html>

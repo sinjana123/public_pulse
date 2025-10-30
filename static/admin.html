@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Dashboard - Public Pulse</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Admin Dashboard</h1>
+  <button id="logoutBtn">Logout</button>
+
+  <h3>Reported Issues</h3>
+  <div id="issues"></div>
+
+  <script>
+    async function fetchIssues() {
+      const res = await fetch('/api/admin/reports');
+      const data = await res.json();
+      if (data.error) {
+        alert('You must log in first');
+        window.location.href = '/login.html';
+        return;
+      }
+      const container = document.getElementById('issues');
+      container.innerHTML = data.map(issue => `
+        <div class="issue">
+          <h4>${issue.title}</h4>
+          <p>${issue.description}</p>
+          <p>Status: <b>${issue.status}</b></p>
+          <button onclick="updateStatus(${issue.id}, 'Resolved')">Mark Resolved</button>
+        </div>
+      `).join('');
+    }
+
+    async function updateStatus(id, status) {
+      await fetch('/api/admin/update_status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ issue_id: id, status })
+      });
+      fetchIssues();
+    }
+
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      await fetch('/api/admin/logout', { method: 'POST' });
+      window.location.href = '/login.html';
+    });
+
+    fetchIssues();
+  </script>
+</body>
+</html>
